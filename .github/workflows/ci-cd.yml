@@ -102,6 +102,9 @@ jobs:
             echo "Starting Frontend container..."
             sudo docker run -d --name doc-converter-frontend -p 5173:5173 "$FRONTEND_IMAGE"
 
+             # Define the private IP first
+            PRIVATE_EC2_IP=10.0.3.193  # Update this to your private EC2 IP
+            
             # Configure NGINX to proxy traffic
             echo "Configuring NGINX to proxy traffic..."
             sudo tee /etc/nginx/conf.d/doc-converter.conf > /dev/null <<EOF
@@ -134,10 +137,6 @@ jobs:
               }
             }
             EOF
-            
-            # Replace the placeholder with the actual private IP
-            PRIVATE_EC2_IP=10.0.3.193 # Update this to your private EC2 IP
-            sudo sed -i "s/\${PRIVATE_EC2_IP}/$PRIVATE_EC2_IP/" /etc/nginx/conf.d/doc-converter.conf
             
             echo "Testing NGINX configuration..."
             sudo nginx -t && sudo systemctl restart nginx
