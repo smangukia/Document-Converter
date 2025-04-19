@@ -9,7 +9,7 @@ services:
     ports:
       - "5173:5173"
     environment:
-      - VITE_API_URL=http://34.227.48.5:3001/api
+      - VITE_API_URL=http://3.93.175.107:3001/api
       - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
       - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
     depends_on:

@@ -578,7 +578,7 @@ function AppContent() {
             <p className="text-gray-600">Convert documents between common formats</p>
             {apiStatus === "offline" && (
               <div className="mt-2 text-sm text-red-600 bg-red-100 p-2 rounded-md inline-block">
-                ⚠️ Backend server is offline. Please start the backend server.
+                Backend server is offline. Please start the backend server.
               </div>
             )}
           </div>

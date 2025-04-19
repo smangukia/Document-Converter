@@ -9,8 +9,8 @@ env:
   BASE_ECR_URL_BACKEND: 536697231430.dkr.ecr.us-east-1.amazonaws.com/doc-converter-backend
   BASE_ECR_URL_FRONTEND: 536697231430.dkr.ecr.us-east-1.amazonaws.com/doc-converter-frontend
   APP_ID: 536697231430
-  PUBLIC_EC2_HOST: 54.164.165.140
-  PRIVATE_EC2_INSTANCE_ID: i-08cec6e62cece8041
+  PUBLIC_EC2_HOST: 3.93.175.107
+  PRIVATE_EC2_INSTANCE_ID: i-0bdad1cfa968ee37c
 
 jobs:
   build-and-push:
@@ -103,7 +103,7 @@ jobs:
             sudo docker run -d --name doc-converter-frontend -p 5173:5173 "$FRONTEND_IMAGE"
 
              # Define the private IP first
-            PRIVATE_EC2_IP=10.0.3.193  # Update this to your private EC2 IP
+            PRIVATE_EC2_IP=10.0.3.174 # Update this to your private EC2 IP
             
             # Configure NGINX to proxy traffic
             echo "Configuring NGINX to proxy traffic..."
