@@ -37,7 +37,7 @@ variable "instance_type" {
 variable "key_name" {
   description = "Name of the EC2 key pair"
   type        = string
-  default = "cloud-project"
+  default = "cloud"
 }
 
 variable "ssh_cidr_blocks" {

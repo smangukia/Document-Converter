@@ -63,6 +63,7 @@ RUN npm ci
 
 # Copy the rest of the application
 COPY . .
+COPY .env .env
 
 # Build the application
 RUN npm run build

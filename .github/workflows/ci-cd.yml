@@ -1,32 +1,64 @@
-name: Build, Push, and Deploy
+name: Build, Push, and Deploy Document Converter
 
 on:
   push:
-    branches: [master]
+    branches: [main]
 
 env:
-  AWS_REGION: us-east-2
-  BASE_ECR_URL_BACKEND: 715841365404.dkr.ecr.us-east-2.amazonaws.com/docushare-backend
-  BASE_ECR_URL_FRONTEND: 715841365404.dkr.ecr.us-east-2.amazonaws.com/docushare-frontend
-  APP_ID: 715841365404
+  AWS_REGION: us-east-1
+  BASE_ECR_URL_BACKEND: 536697231430.dkr.ecr.us-east-1.amazonaws.com/doc-converter-backend
+  BASE_ECR_URL_FRONTEND: 536697231430.dkr.ecr.us-east-1.amazonaws.com/doc-converter-frontend
+  APP_ID: 536697231430
+  PUBLIC_EC2_HOST: 54.164.165.140
+  PRIVATE_EC2_INSTANCE_ID: i-08cec6e62cece8041
 
 jobs:
-  application:
-    name: DocuShare Application
+  build-and-push:
+    name: Build and Push Docker Images
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./frontend
+          push: true
+          platforms: linux/amd64
+          tags: ${{ env.BASE_ECR_URL_FRONTEND }}:latest
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./backend
+          push: true
+          platforms: linux/amd64
+          tags: ${{ env.BASE_ECR_URL_BACKEND }}:latest
+
   deploy-to-public-ec2:
     name: Deploy to EC2 (Public)
     runs-on: ubuntu-latest
-    needs: application
+    needs: build-and-push
     steps:
-      - name: SSH and deploy both containers
+      - name: SSH and deploy frontend container
         uses: appleboy/ssh-action@v1.0.0
         with:
-          host: 3.139.93.219
+          host: ${{ env.PUBLIC_EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
           script: |
@@ -44,6 +76,7 @@ jobs:
               echo "Docker is already installed."
             fi
 
+            # Install NGINX if not already installed
             if ! command -v nginx &> /dev/null; then
               echo "Installing NGINX..."
               sudo amazon-linux-extras enable nginx1
@@ -57,36 +90,43 @@ jobs:
             FRONTEND_IMAGE=${{ env.BASE_ECR_URL_FRONTEND }}:latest
 
             echo "Logging into ECR..."
-            aws ecr get-login-password --region us-east-2 | sudo docker login --username AWS --password-stdin ${{ env.BASE_ECR_URL_FRONTEND }}
+            aws ecr get-login-password --region us-east-1 | sudo docker login --username AWS --password-stdin ${{ env.BASE_ECR_URL_FRONTEND }}
 
-            echo "Pulling frontend and backend Docker images..."
+            echo "Pulling frontend Docker image..."
             sudo docker pull $FRONTEND_IMAGE
 
-            echo "Stopping old containers..."
-            sudo docker stop docushare-frontend || true && sudo docker rm docushare-frontend || true
+            echo "Stopping old container..."
+            sudo docker stop doc-converter-frontend || true && sudo docker rm doc-converter-frontend || true
 
-            # Start the new containers
+            # Start the new container
             echo "Starting Frontend container..."
-            sudo docker run -d --name docushare-frontend -p 3000:3000 "$FRONTEND_IMAGE"
+            sudo docker run -d --name doc-converter-frontend -p 5173:5173 "$FRONTEND_IMAGE"
 
-            echo "Configuring NGINX to proxy on port 3001..."
-            sudo tee /etc/nginx/conf.d/docushare-backend.conf > /dev/null <<EOF
+            # Configure NGINX to proxy traffic
+            echo "Configuring NGINX to proxy traffic..."
+            sudo tee /etc/nginx/conf.d/doc-converter.conf > /dev/null <<EOF
             server {
               # Frontend: Listen on port 80 for the frontend
               listen 80;
 
               location / {
                   # Serve frontend from the frontend container
-                  proxy_pass http://localhost:3000/;
+                  proxy_pass http://localhost:5173/;
                   proxy_set_header Host \$host;
                   proxy_set_header X-Real-IP \$remote_addr;
                   proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
                   proxy_set_header X-Forwarded-Proto \$scheme;
+                  
+                  # WebSocket support
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade \$http_upgrade;
+                  proxy_set_header Connection "upgrade";
               }
 
-              # Backend: All /api requests should go to the backend container on port 3001
+              # Backend: All /api requests go to the backend on the private EC2 instance
               location /api/ {
-                  proxy_pass http://10.0.3.228:3001/api/;
+                  # Use the private IP of your backend EC2 instance
+                  proxy_pass http://${PRIVATE_EC2_IP}:3001/api/;
                   proxy_set_header Host \$host;
                   proxy_set_header X-Real-IP \$remote_addr;
                   proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -94,41 +134,47 @@ jobs:
               }
             }
             EOF
-            echo "Restarting NGINX..."
+            
+            # Replace the placeholder with the actual private IP
+            PRIVATE_EC2_IP=10.0.3.193 # Update this to your private EC2 IP
+            sudo sed -i "s/\${PRIVATE_EC2_IP}/$PRIVATE_EC2_IP/" /etc/nginx/conf.d/doc-converter.conf
+            
+            echo "Testing NGINX configuration..."
             sudo nginx -t && sudo systemctl restart nginx
+
   deploy-to-private-ec2-backend:
     name: Deploy Backend to Private EC2
     runs-on: ubuntu-latest
-    needs: application
+    needs: build-and-push
     steps:
-      - name: Set up AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: us-east-1
 
-      - name: Deploy Backend to Private EC2
+      - name: Deploy Backend to Private EC2 via SSM
         run: |
           aws ssm send-command \
             --document-name "AWS-RunShellScript" \
-            --instance-ids "i-072790db1a181bb49" \
+            --instance-ids "${{ env.PRIVATE_EC2_INSTANCE_ID }}" \
             --comment "Deploy backend container" \
             --parameters 'commands=[
               "if ! command -v docker &> /dev/null; then",
-              "  echo Docker not found. Installing Docker...",
+              "  echo \"Docker not found. Installing Docker...\"",
               "  sudo yum update -y",
               "  sudo yum install -y docker",
               "  sudo systemctl start docker",
               "  sudo systemctl enable docker",
               "  sudo usermod -aG docker ec2-user",
-              "  echo Docker installed successfully.",
+              "  echo \"Docker installed successfully.\"",
               "else",
-              "  echo Docker is already installed.",
+              "  echo \"Docker is already installed.\"",
               "fi",
-              "aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 715841365404.dkr.ecr.us-east-2.amazonaws.com",
-              "sudo docker pull 715841365404.dkr.ecr.us-east-2.amazonaws.com/docushare-backend:latest",
-              "sudo docker stop docushare-backend || true && docker rm docushare-backend || true",
-              "sudo docker run -d --name docushare-backend -p 3001:3001 715841365404.dkr.ecr.us-east-2.amazonaws.com/docushare-backend:latest"
+              "aws ecr get-login-password --region us-east-1 | sudo docker login --username AWS --password-stdin 536697231430.dkr.ecr.us-east-1.amazonaws.com",
+              "sudo docker pull 536697231430.dkr.ecr.us-east-1.amazonaws.com/doc-converter-backend:latest",
+              "sudo docker stop doc-converter-backend || true && sudo docker rm doc-converter-backend || true",
+              "sudo docker run -d --name doc-converter-backend -p 3001:3001 -v /home/ec2-user/uploads:/app/uploads -v /home/ec2-user/outputs:/app/outputs 536697231430.dkr.ecr.us-east-1.amazonaws.com/doc-converter-backend:latest"
             ]' \
-            --region us-east-2
+            --region us-east-1
