@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: document-converter-frontend1:latest
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://34.227.48.5:3001/api
+      - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+      - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: document-converter-backend1:latest
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - NODE_ENV=development
+      - AWS_REGION=${AWS_REGION}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - DYNAMODB_TABLE=${DYNAMODB_TABLE}
+      - USERS_TABLE=${USERS_TABLE}
+      - SQS_QUEUE_URL=${SQS_QUEUE_URL}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+      - PUPPETEER_DISABLE_GPU=true
+      - CHROMIUM_FLAGS="--disable-gpu --no-sandbox --disable-dev-shm-usage --disable-setuid-sandbox --no-zygote --single-process"
+      # Add these new environment variables
+      - PUPPETEER_SKIP_DOWNLOAD=true
+      - PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+      - DISPLAY=:99
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      # Increase shared memory size to improve Chrome stability
+      - /dev/shm:/dev/shm
+    networks:
+      - app-network
+    # Add resource limits to prevent memory issues
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    # Add privileged mode to help with Chrome issues
+    privileged: true
+    # Add ulimits to prevent "too many open files" errors
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+networks:
+  app-network:
+    driver: bridge

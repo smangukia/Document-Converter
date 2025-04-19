@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@aws-sdk/s3-request-presigner": "^3.787.0",
+    "@supabase/supabase-js": "^2.49.4"
+  }
+}
