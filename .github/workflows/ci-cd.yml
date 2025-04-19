@@ -9,8 +9,7 @@ env:
   BASE_ECR_URL_BACKEND: 536697231430.dkr.ecr.us-east-1.amazonaws.com/doc-converter-backend
   BASE_ECR_URL_FRONTEND: 536697231430.dkr.ecr.us-east-1.amazonaws.com/doc-converter-frontend
   APP_ID: 536697231430
-  PUBLIC_EC2_HOST: 3.93.175.107
-  PRIVATE_EC2_INSTANCE_ID: i-0bdad1cfa968ee37c
+  PUBLIC_EC2_HOST: 18.212.248.127
 
 jobs:
   build-and-push:
@@ -76,16 +75,6 @@ jobs:
               echo "Docker is already installed."
             fi
 
-            # Install NGINX if not already installed
-            if ! command -v nginx &> /dev/null; then
-              echo "Installing NGINX..."
-              sudo amazon-linux-extras enable nginx1
-              sudo yum clean metadata
-              sudo yum install -y nginx
-              sudo systemctl start nginx
-              sudo systemctl enable nginx
-            fi
-
             # Pull the Docker images from ECR
             FRONTEND_IMAGE=${{ env.BASE_ECR_URL_FRONTEND }}:latest
 
@@ -102,78 +91,44 @@ jobs:
             echo "Starting Frontend container..."
             sudo docker run -d --name doc-converter-frontend -p 5173:5173 "$FRONTEND_IMAGE"
 
-             # Define the private IP first
-            PRIVATE_EC2_IP=10.0.3.174 # Update this to your private EC2 IP
-            
-            # Configure NGINX to proxy traffic
-            echo "Configuring NGINX to proxy traffic..."
-            sudo tee /etc/nginx/conf.d/doc-converter.conf > /dev/null <<EOF
-            server {
-              # Frontend: Listen on port 80 for the frontend
-              listen 80;
-
-              location / {
-                  # Serve frontend from the frontend container
-                  proxy_pass http://localhost:5173/;
-                  proxy_set_header Host \$host;
-                  proxy_set_header X-Real-IP \$remote_addr;
-                  proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                  proxy_set_header X-Forwarded-Proto \$scheme;
-                  
-                  # WebSocket support
-                  proxy_http_version 1.1;
-                  proxy_set_header Upgrade \$http_upgrade;
-                  proxy_set_header Connection "upgrade";
-              }
-
-              # Backend: All /api requests go to the backend on the private EC2 instance
-              location /api/ {
-                  # Use the private IP of your backend EC2 instance
-                  proxy_pass http://${PRIVATE_EC2_IP}:3001/api/;
-                  proxy_set_header Host \$host;
-                  proxy_set_header X-Real-IP \$remote_addr;
-                  proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                  proxy_set_header X-Forwarded-Proto \$scheme;
-              }
-            }
-            EOF
-            
-            echo "Testing NGINX configuration..."
-            sudo nginx -t && sudo systemctl restart nginx
-
   deploy-to-private-ec2-backend:
     name: Deploy Backend to Private EC2
     runs-on: ubuntu-latest
     needs: build-and-push
     steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+      - name: SSH and deploy backend container
+        uses: appleboy/ssh-action@v1.0.0
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          host: ${{ env.PUBLIC_EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          script: |
+            # Check and install Docker if not installed
+            if ! command -v docker &> /dev/null; then
+              echo "Docker not found. Installing Docker..."
+              sudo yum update -y
+              sudo yum install -y docker
+              sudo systemctl start docker
+              sudo systemctl enable docker
+              sudo usermod -aG docker ec2-user
+              newgrp docker
+              echo "Docker installed successfully."
+            else
+              echo "Docker is already installed."
+            fi
 
-      - name: Deploy Backend to Private EC2 via SSM
-        run: |
-          aws ssm send-command \
-            --document-name "AWS-RunShellScript" \
-            --instance-ids "${{ env.PRIVATE_EC2_INSTANCE_ID }}" \
-            --comment "Deploy backend container" \
-            --parameters 'commands=[
-              "if ! command -v docker &> /dev/null; then",
-              "  echo \"Docker not found. Installing Docker...\"",
-              "  sudo yum update -y",
-              "  sudo yum install -y docker",
-              "  sudo systemctl start docker",
-              "  sudo systemctl enable docker",
-              "  sudo usermod -aG docker ec2-user",
-              "  echo \"Docker installed successfully.\"",
-              "else",
-              "  echo \"Docker is already installed.\"",
-              "fi",
-              "aws ecr get-login-password --region us-east-1 | sudo docker login --username AWS --password-stdin 536697231430.dkr.ecr.us-east-1.amazonaws.com",
-              "sudo docker pull 536697231430.dkr.ecr.us-east-1.amazonaws.com/doc-converter-backend:latest",
-              "sudo docker stop doc-converter-backend || true && sudo docker rm doc-converter-backend || true",
-              "sudo docker run -d --name doc-converter-backend -p 3001:3001 -v /home/ec2-user/uploads:/app/uploads -v /home/ec2-user/outputs:/app/outputs 536697231430.dkr.ecr.us-east-1.amazonaws.com/doc-converter-backend:latest"
-            ]' \
-            --region us-east-1
+            # Pull the Docker images from ECR
+            BACKEND_IMAGE=${{ env.BASE_ECR_URL_BACKEND }}:latest
+
+            echo "Logging into ECR..."
+            aws ecr get-login-password --region us-east-1 | sudo docker login --username AWS --password-stdin ${{ env.BASE_ECR_URL_BACKEND }}
+
+            echo "Pulling backend Docker image..."
+            sudo docker pull $BACKEND_IMAGE
+
+            echo "Stopping old container..."
+            sudo docker stop doc-converter-backend || true && sudo docker rm doc-converter-backend || true
+
+            # Start the new container
+            echo "Starting Frontend container..."
+            sudo docker run -d --name doc-converter-backend -p 3001:3001 "$BACKEND_IMAGE"
