@@ -1,4 +1,4 @@
-FROM node:22-slim
+FROM node:18-slim
 
 # Install dependencies for Puppeteer
 RUN apt-get update && apt-get install -y \
@@ -63,7 +63,9 @@ RUN npm ci
 
 # Copy the rest of the application
 COPY . .
-COPY .env .env
+
+# Remove any local .env files to prevent them from overriding runtime environment variables
+RUN rm -f .env .env.*
 
 # Build the application
 RUN npm run build

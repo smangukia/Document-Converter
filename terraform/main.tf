@@ -1,35 +1,35 @@
-provider "aws" {
-  region = var.aws_region
-}
-
 terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 4.0"
+      version = "~> 5.0"
     }
   }
-  
-  # Uncomment this block to use S3 as a backend for state
+  required_version = ">= 1.2.0"
+
+  # Uncomment this block to use Terraform Cloud for state management
   # backend "s3" {
-  #   bucket         = "your-terraform-state-bucket"
-  #   key            = "user-status-chat/terraform.tfstate"
-  #   region         = "us-east-1"
-  #   dynamodb_table = "terraform-lock"
-  #   encrypt        = true
+  #   bucket = "document-converter-terraform-state"
+  #   key    = "terraform.tfstate"
+  #   region = "us-east-1"
   # }
 }
 
-# Generate a random suffix for unique resource names
-resource "random_id" "suffix" {
-  byte_length = 4
+provider "aws" {
+  region = var.aws_region
 }
 
+# Local variables
 locals {
-  name_prefix = "DocConverter"
   common_tags = {
+    Project     = "DocumentConverter"
     Environment = var.environment
-    Project     = "DocConverter"
     ManagedBy   = "Terraform"
   }
+  
+  # Add the missing name_prefix local variable
+  name_prefix = "${var.project_name}-${var.environment}"
 }
+
+# Keep only the provider configuration and locals in main.tf
+# All resources should be defined in their respective module files

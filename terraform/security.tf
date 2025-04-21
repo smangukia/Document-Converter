@@ -1,80 +1,49 @@
-# Security Group for Web Server
-resource "aws_security_group" "web_server" {
-  name        = "${local.name_prefix}-web-server-sg"
-  description = "Security group for web server"
-  vpc_id      = aws_vpc.main.id
+# Security Groups and IAM Configuration for Document Converter
 
-  # HTTP
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+# Security Group for EC2
+resource "aws_security_group" "ec2_sg" {
+  name        = "${var.project_name}-ec2-sg"
+  description = "Security group for document converter EC2 instance"
+  vpc_id      = aws_vpc.document_converter_vpc.id
 
-  # HTTPS
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # SSH
   ingress {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = var.ssh_cidr_blocks
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "SSH"
   }
 
-  # Add this new rule for port 3000  
+  ingress {
+    from_port   = 5173
+    to_port     = 5173
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Frontend"
+  }
+
   ingress {
     from_port   = 3001
     to_port     = 3001
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow backend traffic on port 3001"
+    description = "Backend API"
   }
 
-  # Outbound
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "HTTP"
   }
 
-  tags = merge(
-    local.common_tags,
-    {
-      Name = "${local.name_prefix}-web-server-sg"
-    }
-  )
-}
-
-# Security Group for Private Backend EC2
-resource "aws_security_group" "private_backend" {
-  name        = "${local.name_prefix}-private-backend-sg"
-  description = "Allow traffic from web server only"
-  vpc_id      = aws_vpc.main.id
-
-  # Allow port 3001 from public EC2 security group
   ingress {
-    from_port       = 3001
-    to_port         = 3001
-    protocol        = "tcp"
-    security_groups = [aws_security_group.web_server.id]
-    description     = "Allow port 3001 from web server"
-  }
-
-  # Allow SSH from public EC2 only
-  ingress {
-    from_port       = 22
-    to_port         = 22
-    protocol        = "tcp"
-    security_groups = [aws_security_group.web_server.id]
-    description     = "Allow SSH from web server"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "HTTPS"
   }
 
   egress {
@@ -85,13 +54,13 @@ resource "aws_security_group" "private_backend" {
   }
 
   tags = merge(local.common_tags, {
-    Name = "${local.name_prefix}-private-backend-sg"
+    Name = "${var.project_name}-ec2-sg"
   })
 }
 
-# IAM Role for Public EC2
-resource "aws_iam_role" "public_ec2_role" {
-  name = "${local.name_prefix}-public-ec2-role"
+# IAM Role for EC2
+resource "aws_iam_role" "ec2_role" {
+  name = "${var.project_name}-ec2-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -109,47 +78,81 @@ resource "aws_iam_role" "public_ec2_role" {
   tags = local.common_tags
 }
 
-# Attach policies to Public EC2 Role
-resource "aws_iam_role_policy_attachment" "public_cloudwatch_full_access" {
-  role       = aws_iam_role.public_ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/CloudWatchFullAccess"
-}
+# IAM Policy for EC2
+resource "aws_iam_policy" "ec2_policy" {
+  name        = "${var.project_name}-ec2-policy"
+  description = "Policy for document converter EC2 instance"
 
-resource "aws_iam_role_policy_attachment" "public_ecr_full_access" {
-  role       = aws_iam_role.public_ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess"
-}
-
-# Instance profile for Public EC2
-resource "aws_iam_instance_profile" "public_ec2_profile" {
-  name = "${local.name_prefix}-public-ec2-profile"
-  role = aws_iam_role.public_ec2_role.name
-}
-
-# Attach policies for Public EC2 Role (SSM + CloudWatch)
-resource "aws_iam_role_policy_attachment" "public_ssm" {
-  role       = aws_iam_role.public_ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-}
-
-resource "aws_iam_role_policy_attachment" "public_cloudwatch" {
-  role       = aws_iam_role.public_ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
-}
-
-# IAM Role for Private EC2
-resource "aws_iam_role" "private_ec2_role" {
-  name = "${local.name_prefix}-private-ec2-role"
-
-  assume_role_policy = jsonencode({
+  policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Action = "sts:AssumeRole"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket"
+        ]
         Effect = "Allow"
-        Principal = {
-          Service = "ec2.amazonaws.com"
-        }
+        Resource = [
+          aws_s3_bucket.document_bucket.arn,
+          "${aws_s3_bucket.document_bucket.arn}/*"
+        ]
+      },
+      {
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ]
+        Effect = "Allow"
+        Resource = [
+          aws_dynamodb_table.conversions_table.arn,
+          aws_dynamodb_table.users_table.arn,
+          "${aws_dynamodb_table.conversions_table.arn}/index/*",
+          "${aws_dynamodb_table.users_table.arn}/index/*"
+        ]
+      },
+      {
+        Action = [
+          "sqs:SendMessage",
+          "sqs:ReceiveMessage",
+          "sqs:DeleteMessage",
+          "sqs:GetQueueAttributes"
+        ]
+        Effect = "Allow"
+        Resource = aws_sqs_queue.conversion_queue.arn
+      },
+      {
+        Action = [
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:BatchCheckLayerAvailability"
+        ]
+        Effect = "Allow"
+        Resource = [
+          aws_ecr_repository.frontend_repo.arn,
+          aws_ecr_repository.backend_repo.arn
+        ]
+      },
+      {
+        Action = [
+          "ecr:GetAuthorizationToken"
+        ]
+        Effect = "Allow"
+        Resource = "*"
+      },
+      {
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Effect = "Allow"
+        Resource = "arn:aws:logs:*:*:*"
       }
     ]
   })
@@ -157,45 +160,14 @@ resource "aws_iam_role" "private_ec2_role" {
   tags = local.common_tags
 }
 
-# Attach policies to Private EC2 Role
-resource "aws_iam_role_policy_attachment" "private_s3_full_access" {
-  role       = aws_iam_role.private_ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+# Attach Policy to Role
+resource "aws_iam_role_policy_attachment" "ec2_policy_attachment" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = aws_iam_policy.ec2_policy.arn
 }
 
-resource "aws_iam_role_policy_attachment" "private_dynamodb_full_access" {
-  role       = aws_iam_role.private_ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess"
-}
-
-resource "aws_iam_role_policy_attachment" "private_sqs_full_access" {
-  role       = aws_iam_role.private_ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSQSFullAccess"
-}
-
-resource "aws_iam_role_policy_attachment" "private_cloudwatch_full_access" {
-  role       = aws_iam_role.private_ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/CloudWatchFullAccess"
-}
-
-resource "aws_iam_role_policy_attachment" "private_ecr_full_access" {
-  role       = aws_iam_role.private_ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess"
-}
-
-# Instance profile for Private EC2
-resource "aws_iam_instance_profile" "private_ec2_profile" {
-  name = "${local.name_prefix}-private-ec2-profile"
-  role = aws_iam_role.private_ec2_role.name
-}
-
-# Attach policies for Private EC2 Role (SSM + CloudWatch)
-resource "aws_iam_role_policy_attachment" "private_ssm" {
-  role       = aws_iam_role.private_ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-}
-
-resource "aws_iam_role_policy_attachment" "private_cloudwatch" {
-  role       = aws_iam_role.private_ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+# EC2 Instance Profile
+resource "aws_iam_instance_profile" "ec2_profile" {
+  name = "${var.project_name}-ec2-profile"
+  role = aws_iam_role.ec2_role.name
 }

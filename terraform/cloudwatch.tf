@@ -1,13 +1,16 @@
-# SNS Topic for Alarms
-resource "aws_sns_topic" "alarms" {
-  name = "${local.name_prefix}-alarms"
-  
+# CloudWatch Configuration for Document Converter
+
+# CloudWatch Log Group for EC2
+resource "aws_cloudwatch_log_group" "ec2_log_group" {
+  name              = "/aws/ec2/${var.project_name}"
+  retention_in_days = 30
+
   tags = local.common_tags
 }
 
-# CloudWatch Alarm for EC2 CPU
-resource "aws_cloudwatch_metric_alarm" "ec2_cpu" {
-  alarm_name          = "${local.name_prefix}-ec2-cpu-alarm"
+# CloudWatch Alarm for EC2 CPU Utilization
+resource "aws_cloudwatch_metric_alarm" "ec2_cpu_alarm" {
+  alarm_name          = "${var.project_name}-cpu-alarm"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 2
   metric_name         = "CPUUtilization"
@@ -15,120 +18,73 @@ resource "aws_cloudwatch_metric_alarm" "ec2_cpu" {
   period              = 300
   statistic           = "Average"
   threshold           = 80
-  alarm_description   = "Alarm if CPU exceeds 80% for 5 minutes"
-  alarm_actions       = [aws_sns_topic.alarms.arn]
+  alarm_description   = "This metric monitors EC2 CPU utilization"
   
   dimensions = {
-    InstanceId = aws_instance.web_server.id
+    InstanceId = aws_instance.app_server.id
   }
-  
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+  ok_actions    = [aws_sns_topic.alerts.arn]
+
   tags = local.common_tags
 }
 
-# CloudWatch Alarm for document-conversions Read Capacity
-resource "aws_cloudwatch_metric_alarm" "dynamodb_conversions_read" {
-  alarm_name          = "${local.name_prefix}-dynamodb-conversions-read-alarm"
+# CloudWatch Alarm for EC2 Memory Utilization
+resource "aws_cloudwatch_metric_alarm" "ec2_memory_alarm" {
+  alarm_name          = "${var.project_name}-memory-alarm"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 2
-  metric_name         = "ConsumedReadCapacityUnits"
-  namespace           = "AWS/DynamoDB"
+  metric_name         = "mem_used_percent"
+  namespace           = "CWAgent"
   period              = 300
-  statistic           = "Sum"
-  threshold           = 240
-  alarm_description   = "Alarm if DynamoDB document-conversions consumed read capacity exceeds threshold"
-  alarm_actions       = [aws_sns_topic.alarms.arn]
+  statistic           = "Average"
+  threshold           = 80
+  alarm_description   = "This metric monitors EC2 memory utilization"
   
   dimensions = {
-    TableName = aws_dynamodb_table.filelog.name
+    InstanceId = aws_instance.app_server.id
   }
-  
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+  ok_actions    = [aws_sns_topic.alerts.arn]
+
   tags = local.common_tags
 }
 
-# CloudWatch Alarm for document-conversions Write Capacity
-resource "aws_cloudwatch_metric_alarm" "dynamodb_conversions_write" {
-  alarm_name          = "${local.name_prefix}-dynamodb-conversions-write-alarm"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 2
-  metric_name         = "ConsumedWriteCapacityUnits"
-  namespace           = "AWS/DynamoDB"
-  period              = 300
-  statistic           = "Sum"
-  threshold           = 240
-  alarm_description   = "Alarm if DynamoDB document-conversions consumed write capacity exceeds threshold"
-  alarm_actions       = [aws_sns_topic.alarms.arn]
-  
-  dimensions = {
-    TableName = aws_dynamodb_table.filelog.name
-  }
-  
-  tags = local.common_tags
-}
-
-# CloudWatch Alarm for document-converter-users Read Capacity
-resource "aws_cloudwatch_metric_alarm" "dynamodb_users_read" {
-  alarm_name          = "${local.name_prefix}-dynamodb-users-read-alarm"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 2
-  metric_name         = "ConsumedReadCapacityUnits"
-  namespace           = "AWS/DynamoDB"
-  period              = 300
-  statistic           = "Sum"
-  threshold           = 240
-  alarm_description   = "Alarm if DynamoDB document-converter-users consumed read capacity exceeds threshold"
-  alarm_actions       = [aws_sns_topic.alarms.arn]
-  
-  dimensions = {
-    TableName = aws_dynamodb_table.users.name
-  }
-  
-  tags = local.common_tags
-}
-
-# CloudWatch Alarm for document-converter-users Write Capacity
-resource "aws_cloudwatch_metric_alarm" "dynamodb_users_write" {
-  alarm_name          = "${local.name_prefix}-dynamodb-users-write-alarm"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 2
-  metric_name         = "ConsumedWriteCapacityUnits"
-  namespace           = "AWS/DynamoDB"
-  period              = 300
-  statistic           = "Sum"
-  threshold           = 240
-  alarm_description   = "Alarm if DynamoDB document-converter-users consumed write capacity exceeds threshold"
-  alarm_actions       = [aws_sns_topic.alarms.arn]
-  
-  dimensions = {
-    TableName = aws_dynamodb_table.users.name
-  }
-  
-  tags = local.common_tags
-}
-
-# CloudWatch Alarm for SQS Queue
-resource "aws_cloudwatch_metric_alarm" "sqs_messages" {
-  alarm_name          = "${local.name_prefix}-sqs-messages-alarm"
+# CloudWatch Alarm for SQS Queue Depth
+resource "aws_cloudwatch_metric_alarm" "sqs_queue_depth_alarm" {
+  alarm_name          = "${var.project_name}-queue-depth-alarm"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 2
   metric_name         = "ApproximateNumberOfMessagesVisible"
   namespace           = "AWS/SQS"
   period              = 300
-  statistic           = "Sum"
+  statistic           = "Average"
   threshold           = 100
-  alarm_description   = "Alarm if SQS queue has too many messages"
-  alarm_actions       = [aws_sns_topic.alarms.arn]
+  alarm_description   = "This metric monitors SQS queue depth"
   
   dimensions = {
-    QueueName = aws_sqs_queue.message_queue.name
+    QueueName = aws_sqs_queue.conversion_queue.name
   }
-  
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+  ok_actions    = [aws_sns_topic.alerts.arn]
+
+  tags = local.common_tags
+}
+
+# SNS Topic for Alerts
+resource "aws_sns_topic" "alerts" {
+  name = "${var.project_name}-alerts"
+
   tags = local.common_tags
 }
 
 # CloudWatch Dashboard
 resource "aws_cloudwatch_dashboard" "main" {
-  dashboard_name = "${local.name_prefix}-dashboard"
-  
+  dashboard_name = "${var.project_name}-dashboard"
+
   dashboard_body = jsonencode({
     widgets = [
       {
@@ -139,7 +95,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         height = 6
         properties = {
           metrics = [
-            ["AWS/EC2", "CPUUtilization", "InstanceId", aws_instance.web_server.id]
+            ["AWS/EC2", "CPUUtilization", "InstanceId", aws_instance.app_server.id]
           ]
           period = 300
           stat   = "Average"
@@ -155,15 +111,12 @@ resource "aws_cloudwatch_dashboard" "main" {
         height = 6
         properties = {
           metrics = [
-            ["AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName",aws_dynamodb_table.filelog.name],
-            ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", aws_dynamodb_table.filelog.name],
-            ["AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", aws_dynamodb_table.users.name],
-            ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", aws_dynamodb_table.users.name]
+            ["CWAgent", "mem_used_percent", "InstanceId", aws_instance.app_server.id]
           ]
           period = 300
-          stat   = "Sum"
+          stat   = "Average"
           region = var.aws_region
-          title  = "DynamoDB Capacity Units"
+          title  = "EC2 Memory Utilization"
         }
       },
       {
@@ -174,14 +127,29 @@ resource "aws_cloudwatch_dashboard" "main" {
         height = 6
         properties = {
           metrics = [
-            ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", aws_sqs_queue.message_queue.name],
-            ["AWS/SQS", "NumberOfMessagesSent", "QueueName", aws_sqs_queue.message_queue.name],
-            ["AWS/SQS", "NumberOfMessagesReceived", "QueueName", aws_sqs_queue.message_queue.name]
+            ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", aws_sqs_queue.conversion_queue.name]
+          ]
+          period = 300
+          stat   = "Average"
+          region = var.aws_region
+          title  = "SQS Queue Depth"
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 6
+        width  = 12
+        height = 6
+        properties = {
+          metrics = [
+            ["AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", aws_dynamodb_table.conversions_table.name],
+            ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", aws_dynamodb_table.conversions_table.name]
           ]
           period = 300
           stat   = "Sum"
           region = var.aws_region
-          title  = "SQS Queue Metrics"
+          title  = "DynamoDB Capacity Units"
         }
       }
     ]
