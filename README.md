@@ -55,7 +55,7 @@ The project follows a microservices architecture with the following layers:
 
 1. Clone the repository:
    \`\`\`
-   git clone https://github.com/yourusername/document-converter.git
+   git clone https://github.com/smangukia/Document-Converter.git
    cd document-converter
    \`\`\`
 
@@ -105,29 +105,6 @@ The project uses Terraform for Infrastructure as Code (IaC) to provision all req
    \`\`\`
 
 5. Confirm the deployment by typing `yes` when prompted.
-
-## Project Structure
-
-\`\`\`
-document-converter/
-├── frontend/                # React frontend application
-│   ├── src/                 # Source code
-│   │   ├── components/      # React components
-│   │   ├── App.tsx          # Main application component
-│   │   └── ...
-│   └── ...
-├── backend/                 # Node.js backend application
-│   ├── src/                 # Source code
-│   │   ├── services/        # Business logic services
-│   │   ├── index.ts         # Express server entry point
-│   │   └── lambda.ts        # AWS Lambda handler
-│   └── ...
-├── terraform/               # Infrastructure as Code
-│   ├── main.tf              # Main Terraform configuration
-│   ├── variables.tf         # Variable definitions
-│   └── outputs.tf           # Output definitions
-└── ...
-\`\`\`
 
 ## Supported Conversions
 
