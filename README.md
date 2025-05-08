@@ -54,20 +54,20 @@ The project follows a microservices architecture with the following layers:
 ### Installation
 
 1. Clone the repository:
-   \`\`\`
+   ```
    git clone https://github.com/smangukia/Document-Converter.git
    cd document-converter
-   \`\`\`
+   ```
 
 2. Install dependencies:
-   \`\`\`
+   ```
    npm run install:all
-   \`\`\`
+   ```
 
 3. Start the development servers:
-   \`\`\`
+   ```
    npm start
-   \`\`\`
+   ```
 
 This will start both the frontend and backend servers:
 - Frontend: http://localhost:5173
@@ -85,24 +85,24 @@ The project uses Terraform for Infrastructure as Code (IaC) to provision all req
 ### Deployment Steps
 
 1. Navigate to the terraform directory:
-   \`\`\`
+   ```
    cd terraform
-   \`\`\`
+   ```
 
 2. Initialize Terraform:
-   \`\`\`
+   ```
    terraform init
-   \`\`\`
+   ```
 
 3. Review the deployment plan:
-   \`\`\`
+   ```
    terraform plan
-   \`\`\`
+   ```
 
 4. Apply the configuration:
-   \`\`\`
+   ```
    terraform apply
-   \`\`\`
+   ```
 
 5. Confirm the deployment by typing `yes` when prompted.
 
